@@ -7,7 +7,7 @@ SYNOPSIS
 --------
 
 ```
-	bgpq3 [-h host[:port]] [-S sources] [-EP] [-f asn | -G asn] [-2346AbDdJjpsX] [-F fmt] [-r len] [-R len] [-m max] [-W len] OBJECTS [...] EXCEPT OBJECTS
+	bgpq3 [-h host[:port]] [-S sources] [-EPz] [-f asn | -F fmt | -G asn | -t] [-2346ABbDdJjNnpsUX] [-a asn] [-r len] [-R len] [-m max] [-W len] OBJECTS [...] EXCEPT OBJECTS
 ```
 
 DESCRIPTION
@@ -18,6 +18,10 @@ extended access-lists, policy-statement terms and as-path lists based on
 RADB data.
 
 The options are as follows:
+
+#### -2
+
+Allow routes registered for as23456 (transition-as) (default: false)
 
 #### -3      
 
@@ -36,6 +40,14 @@ Generate IPv6 prefix/access-lists (IPv4 by default).
 Try to aggregate generated filters as much as possible (not all output formats
 supported).
 
+#### -a asn
+
+Specify ASN that shall be denied in case of empty prefix-list (OpenBGPD).
+
+#### -B
+
+Generate output in OpenBGPD format (default: Cisco).
+
 #### -b
 
 Generate output in BIRD format (default: Cisco).
@@ -51,7 +63,8 @@ Use asdot notation for Cisco as-path access-lists.
 #### -E      
 
 Generate extended access-list (Cisco) or policy-statement term using
-route-filters (Juniper).
+route-filters (Juniper), [ip|ipv6]-prefix-list (Nokia) or prefix-filter
+(OpenBGPD)
 
 #### -f `AS number`
 
@@ -84,6 +97,14 @@ Maximum length of accepted prefixes (default: `32` for IPv4, `128` for IPv6).
 #### -M `match`
 
 Extra match conditions for Juniper route-filters. See the examples section.
+
+#### -n
+
+Generate config for Nokia SR OS (former Alcatel-Lucent) MD-CLI (default: Cisco)
+
+#### -N
+
+Generate config for Nokia SR OS (former Alcatel-Lucent) classic CLI (default: Cisco)
 
 #### -l `name`
 
@@ -119,11 +140,19 @@ Generate sequence numbers in IOS-style prefix-lists.
 
 #### -S `sources`
 
-Use specified sources only (default: RADB,RIPE,APNIC).
+Use specified sources only (recommended: RADB,RIPE,APNIC).
+
+#### -t
+
+Generate as-sets for OpenBGPD (OpenBSD 6.4+), BIRD and JSON formats.
 
 #### -T      
 
 Disable pipelining. (not recommended)
+
+#### -U
+
+Generate output in Huawei format (default: Cisco).
 
 #### -W `length`
 
@@ -132,6 +161,10 @@ Generate as-path strings of a given length maximum (0 for infinity).
 #### -X      
 
 Generate config for Cisco IOS XR devices (plain IOS by default).
+
+#### -z
+
+Generate Juniper route-filter-list (JunOS 16.2+).
 
 ####  `OBJECTS`
 
@@ -315,7 +348,7 @@ SEE ALSO
 --------
 
 1. [Routing Arbiter](http://www.radb.net/)
-2. [draft-michaelson-4byte-as-representation-05.txt](http://www.ietf.org/internet-drafts/draft-michaelson-4byte-as-representation-05.txt)
+2. [draft-michaelson-4byte-as-representation-05](https://tools.ietf.org/html/draft-michaelson-4byte-as-representation-05)
      for information on 'asdot' and 'asplain' notations.
 3. [Cisco documentation](http://www.cisco.com/en/US/prod/collateral/iosswrel/ps6537/ps6554/ps6599/data_sheet_C78-521821.html)
      for information on Cisco implementation of ASN32.

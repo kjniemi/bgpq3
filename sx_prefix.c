@@ -242,10 +242,19 @@ sx_prefix_range_parse(struct sx_radix_tree* tree, int af, int maxlen,
 			text, min, p.masklen);
 		return 0;
 	};
-	SX_DEBUG(debug_expander, "parsed prefix-range %s as %lu-%lu\n",
-		text, min, max);
+	if (af == AF_INET && max > 32) {
+		sx_report(SX_ERROR, "Invalid prefix-range %s: max %lu > 32\n",
+			text, max);
+		return 0;
+	} else if (af == AF_INET6 && max > 128) {
+		sx_report(SX_ERROR, "Invalid ipv6 prefix-range %s: max %lu > 128\n",
+			text, max);
+		return 0;
+	};
 	if (max > maxlen)
 		max = maxlen;
+	SX_DEBUG(debug_expander, "parsed prefix-range %s as %lu-%lu (maxlen: %u)\n",
+		text, min, max, maxlen);
 	sx_radix_tree_insert_specifics(tree, p, min, max);
 	return 1;
 };
@@ -280,15 +289,22 @@ sx_prefix_fprint(FILE* f, struct sx_prefix* p)
 };
 
 int
-sx_prefix_snprintf(struct sx_prefix* p, char* rbuffer, int srb)
+sx_prefix_snprintf_sep(struct sx_prefix* p, char* rbuffer, int srb, char* sep)
 {
 	char buffer[128];
+	if(!sep) sep="/";
 	if(!p) {
 		snprintf(rbuffer,srb,"(null)");
 		return 0;
 	};
 	inet_ntop(p->family,&p->addr,buffer,sizeof(buffer));
-	return snprintf(rbuffer,srb,"%s/%i",buffer,p->masklen);
+	return snprintf(rbuffer,srb,"%s%s%i",buffer,sep,p->masklen);
+};
+
+int
+sx_prefix_snprintf(struct sx_prefix* p, char* rbuffer, int srb)
+{
+	return sx_prefix_snprintf_sep(p, rbuffer, srb, "/");
 };
 
 int

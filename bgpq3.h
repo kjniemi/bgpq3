@@ -16,15 +16,21 @@ typedef enum {
 	V_CISCO_XR,
 	V_JSON,
 	V_BIRD,
-	V_FORMAT
+	V_OPENBGPD,
+	V_FORMAT,
+	V_NOKIA,
+	V_HUAWEI,
+	V_NOKIA_MD
 } bgpq_vendor_t;
 
 typedef enum {
 	T_NONE = 0,
 	T_ASPATH,
 	T_OASPATH,
+	T_ASSET,
 	T_PREFIXLIST,	
-	T_EACL
+	T_EACL,
+	T_ROUTE_FILTER_LIST
 } bgpq_gen_t;
 
 struct bgpq_expander;
@@ -52,6 +58,7 @@ struct bgpq_expander {
 	int identify;
 	int sequence;
 	int maxdepth;
+	int validate_asns;
 	unsigned char asn32;
 	unsigned char* asn32s[65536];
 	struct bgpq_prequest* firstpipe, *lastpipe;
@@ -79,11 +86,12 @@ int bgpq_expand(struct bgpq_expander* b);
 int bgpq3_print_prefixlist(FILE* f, struct bgpq_expander* b);
 int bgpq3_print_eacl(FILE* f, struct bgpq_expander* b);
 int bgpq3_print_aspath(FILE* f, struct bgpq_expander* b);
+int bgpq3_print_asset(FILE* f, struct bgpq_expander* b);
 int bgpq3_print_oaspath(FILE* f, struct bgpq_expander* b);
+int bgpq3_print_route_filter_list(FILE* f, struct bgpq_expander* b);
 
 #ifndef HAVE_STRLCPY
 size_t strlcpy(char* dst, const char* src, size_t size);
 #endif
 
 #endif
-	

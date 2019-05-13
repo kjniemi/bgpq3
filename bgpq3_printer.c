@@ -18,6 +18,8 @@ extern int debug_expander;
 
 int bgpq3_print_json_aspath(FILE* f, struct bgpq_expander* b);
 int bgpq3_print_bird_aspath(FILE* f, struct bgpq_expander* b);
+int bgpq3_print_openbgpd_aspath(FILE* f, struct bgpq_expander* b);
+int bgpq3_print_openbgpd_asset(FILE* f, struct bgpq_expander* b);
 
 int
 bgpq3_print_cisco_aspath(FILE* f, struct bgpq_expander* b)
@@ -304,6 +306,289 @@ bgpq3_print_juniper_oaspath(FILE* f, struct bgpq_expander* b)
 };
 
 int
+bgpq3_print_openbgpd_oaspath(FILE* f, struct bgpq_expander* b)
+{
+	int i, j, k, lineNo=0;
+
+	for(k=0;k<65536;k++) {
+		if(!b->asn32s[k]) continue;
+
+		for(i=0;i<8192;i++) {
+			for(j=0;j<8;j++) {
+				if(b->asn32s[k][i]&(0x80>>j)) {
+					fprintf(f, "allow to AS %u AS %u\n", b->asnumber,
+						k*65536+i*8+j);
+					lineNo++;
+				};
+			};
+		};
+	};
+	if(!lineNo)
+		fprintf(f, "deny to AS %u\n", b->asnumber);
+	return 0;
+};
+
+int
+bgpq3_print_nokia_aspath(FILE* f, struct bgpq_expander* b)
+{
+	int nc=0, lineNo=1, i, j, k;
+
+	fprintf(f,"configure router policy-options\nbegin\nno as-path-group \"%s\"\n",
+		b->name ? b->name : "NN");
+	fprintf(f,"as-path-group \"%s\"\n", b->name ? b->name : "NN");
+
+	if(b->asn32s[b->asnumber/65536] &&
+		b->asn32s[b->asnumber/65535][(b->asnumber%65536)/8]&
+		(0x80>>(b->asnumber%8))) {
+		fprintf(f,"  entry %u expression \"%u+\"\n", lineNo, b->asnumber);
+		lineNo++;
+	};
+	for(k=0;k<65536;k++) {
+		if(!b->asn32s[k]) continue;
+		for(i=0;i<8192;i++) {
+			for(j=0;j<8;j++) {
+				if(b->asn32s[k][i]&(0x80>>j)) {
+					if(k*65536+i*8+j==b->asnumber) continue;
+					if(!nc) {
+						fprintf(f,"  entry %u expression \"%u.*[%u",
+							lineNo,b->asnumber,k*65536+i*8+j);
+					} else {
+						fprintf(f," %u",k*65536+i*8+j);
+					};
+					nc++;
+					if(nc==b->aswidth) {
+						fprintf(f,"]\"\n");
+						nc=0;
+						lineNo++;
+					};
+				};
+			};
+		};
+	};
+	if(nc) fprintf(f,"]\"\n");
+	fprintf(f,"exit\ncommit\n");
+	return 0;
+};
+
+int
+bgpq3_print_nokia_md_aspath(FILE* f, struct bgpq_expander* b)
+{
+	int nc=0, lineNo=1, i, j, k;
+
+	fprintf(f,"/configure policy-options\ndelete as-path-group \"%s\"\n",
+		b->name ? b->name : "NN");
+	fprintf(f,"as-path-group \"%s\" {\n", b->name ? b->name : "NN");
+
+	if(b->asn32s[b->asnumber/65536] &&
+		b->asn32s[b->asnumber/65535][(b->asnumber%65536)/8]&
+		(0x80>>(b->asnumber%8))) {
+		fprintf(f,"  entry %u {\n    expression \"%u+\"\n  }\n", lineNo,
+			b->asnumber);
+		lineNo++;
+	};
+	for(k=0;k<65536;k++) {
+		if(!b->asn32s[k]) continue;
+		for(i=0;i<8192;i++) {
+			for(j=0;j<8;j++) {
+				if(b->asn32s[k][i]&(0x80>>j)) {
+					if(k*65536+i*8+j==b->asnumber) continue;
+					if(!nc) {
+						fprintf(f,"  entry %u {\n    expression \"%u.*[%u",
+							lineNo,b->asnumber,k*65536+i*8+j);
+					} else {
+						fprintf(f," %u",k*65536+i*8+j);
+					};
+					nc++;
+					if(nc==b->aswidth) {
+						fprintf(f,"]\"\n  }\n");
+						nc=0;
+						lineNo++;
+					};
+				};
+			};
+		};
+	};
+	if(nc) fprintf(f,"]\"\n  }\n");
+	fprintf(f, "}\n");
+	return 0;
+};
+
+
+int
+bgpq3_print_huawei_aspath(FILE* f, struct bgpq_expander* b)
+{
+	int nc=0, i, j, k, empty=1;
+
+	fprintf(f,"undo ip as-path-filter %s\n",
+		b->name ? b->name : "NN");
+
+	if(b->asn32s[b->asnumber/65536] &&
+		b->asn32s[b->asnumber/65535][(b->asnumber%65536)/8]&
+		(0x80>>(b->asnumber%8))) {
+		fprintf(f,"ip as-path-filter %s permit ^%u(%u)*$\n",
+			b->name?b->name:"NN",b->asnumber,b->asnumber);
+		empty=0;
+	};
+	for(k=0;k<65536;k++) {
+		if(!b->asn32s[k]) continue;
+		for(i=0;i<8192;i++) {
+			for(j=0;j<8;j++) {
+				if(b->asn32s[k][i]&(0x80>>j)) {
+					if(k*65536+i*8+j==b->asnumber) continue;
+					if(!nc) {
+						fprintf(f,"ip as-path-filter %s permit ^%u([0-9]+)*"
+							"_(%u",
+							b->name?b->name:"NN",b->asnumber,k*65536+i*8+j);
+						empty=0;
+					} else {
+						fprintf(f,"|%u",k*65536+i*8+j);
+					};
+					nc++;
+					if(nc==b->aswidth) {
+						fprintf(f,")$\n");
+						nc=0;
+					};
+				};
+			};
+		};
+	};
+	if(nc) fprintf(f,")$\n");
+	if(empty)
+		fprintf(f,"ip as-path-filter %s deny .*\n", b->name?b->name:"NN");
+	return 0;
+};
+
+int
+bgpq3_print_huawei_oaspath(FILE* f, struct bgpq_expander* b)
+{
+	int nc=0, i, j, k, empty=1;
+
+	fprintf(f,"undo ip as-path-filter %s\n",
+		b->name ? b->name : "NN");
+
+	if(b->asn32s[b->asnumber/65536] &&
+		b->asn32s[b->asnumber/65536][(b->asnumber%65536)/8]&
+		(0x80>>(b->asnumber%8))) {
+		fprintf(f,"ip as-path-filter %s permit (_%u)*$\n", b->name?b->name:"NN",
+			b->asnumber);
+		empty=0;
+	};
+	for(k=0;k<65536;k++) {
+		if(!b->asn32s[k]) continue;
+
+		for(i=0;i<8192;i++) {
+			for(j=0;j<8;j++) {
+				if(b->asn32s[k][i]&(0x80>>j)) {
+					if(k*65536+i*8+j==b->asnumber) continue;
+					if(!nc) {
+						fprintf(f,"ip as-path-filter %s permit ^(_[0-9]+)*_(%u",
+							b->name?b->name:"NN",k*65536+i*8+j);
+					} else {
+						fprintf(f,"|%u",k*65536+i*8+j);
+					}
+					nc++;
+					empty=0;
+					if(nc==b->aswidth) {
+						fprintf(f,")$\n");
+						nc=0;
+					};
+				};
+			};
+		};
+	};
+	if(nc) fprintf(f,")$\n");
+	if(empty)
+		fprintf(f, "ip as-path-filter %s deny .*\n", b->name?b->name:"NN");
+	return 0;
+};
+
+int
+bgpq3_print_nokia_oaspath(FILE* f, struct bgpq_expander* b)
+{
+	int nc=0, lineNo=1, i, j, k;
+
+	fprintf(f,"configure router policy-options\nbegin\nno as-path-group \"%s\"\n",
+		b->name ? b->name : "NN");
+	fprintf(f,"as-path-group \"%s\"\n", b->name ? b->name : "NN");
+
+	if(b->asn32s[b->asnumber/65536] &&
+		b->asn32s[b->asnumber/65536][(b->asnumber%65536)/8]&
+		(0x80>>(b->asnumber%8))) {
+		fprintf(f,"  entry %u expression \"%u+\"\n", lineNo, b->asnumber);
+		lineNo++;
+	};
+	for(k=0;k<65536;k++) {
+		if(!b->asn32s[k]) continue;
+
+		for(i=0;i<8192;i++) {
+			for(j=0;j<8;j++) {
+				if(b->asn32s[k][i]&(0x80>>j)) {
+					if(k*65536+i*8+j==b->asnumber) continue;
+					if(!nc) {
+						fprintf(f,"  entry %u expression \".*[%u",
+							lineNo,k*65536+i*8+j);
+					} else {
+						fprintf(f," %u",k*65536+i*8+j);
+					}
+					nc++;
+					if(nc==b->aswidth) {
+						fprintf(f,"]\"\n");
+						nc=0;
+						lineNo++;
+					};
+				};
+			};
+		};
+	};
+	if(nc) fprintf(f,"]\"\n");
+	return 0;
+};
+
+int
+bgpq3_print_nokia_md_oaspath(FILE* f, struct bgpq_expander* b)
+{
+	int nc=0, lineNo=1, i, j, k;
+
+	fprintf(f,"/configure policy-options\ndelete as-path-group \"%s\"\n",
+		b->name ? b->name : "NN");
+	fprintf(f,"as-path-group \"%s\" {\n", b->name ? b->name : "NN");
+
+	if(b->asn32s[b->asnumber/65536] &&
+		b->asn32s[b->asnumber/65536][(b->asnumber%65536)/8]&
+		(0x80>>(b->asnumber%8))) {
+		fprintf(f,"  entry %u {\n    expression \"%u+\"\n  }\n", lineNo,
+			b->asnumber);
+		lineNo++;
+	};
+	for(k=0;k<65536;k++) {
+		if(!b->asn32s[k]) continue;
+
+		for(i=0;i<8192;i++) {
+			for(j=0;j<8;j++) {
+				if(b->asn32s[k][i]&(0x80>>j)) {
+					if(k*65536+i*8+j==b->asnumber) continue;
+					if(!nc) {
+						fprintf(f,"  entry %u {\n    expression \".*[%u",
+							lineNo,k*65536+i*8+j);
+					} else {
+						fprintf(f," %u",k*65536+i*8+j);
+					}
+					nc++;
+					if(nc==b->aswidth) {
+						fprintf(f,"]\"\n  }\n");
+						nc=0;
+						lineNo++;
+					};
+				};
+			};
+		};
+	};
+	if(nc) fprintf(f,"]\"\n  }\n");
+	fprintf(f, "}\n");
+	return 0;
+};
+
+int
 bgpq3_print_aspath(FILE* f, struct bgpq_expander* b)
 {
 	if(b->vendor==V_JUNIPER) {
@@ -316,6 +601,14 @@ bgpq3_print_aspath(FILE* f, struct bgpq_expander* b)
 		return bgpq3_print_json_aspath(f,b);
 	} else if(b->vendor==V_BIRD) {
 		return bgpq3_print_bird_aspath(f,b);
+	} else if(b->vendor==V_OPENBGPD) {
+		return bgpq3_print_openbgpd_aspath(f,b);
+	} else if(b->vendor==V_NOKIA) {
+		return bgpq3_print_nokia_aspath(f,b);
+	} else if(b->vendor==V_NOKIA_MD) {
+		return bgpq3_print_nokia_md_aspath(f,b);
+	} else if(b->vendor==V_HUAWEI) {
+		return bgpq3_print_huawei_aspath(f,b);
 	} else {
 		sx_report(SX_FATAL,"Unknown vendor %i\n", b->vendor);
 	};
@@ -331,10 +624,35 @@ bgpq3_print_oaspath(FILE* f, struct bgpq_expander* b)
 		return bgpq3_print_cisco_oaspath(f,b);
 	} else if(b->vendor==V_CISCO_XR) {
 		return bgpq3_print_cisco_xr_oaspath(f,b);
+	} else if(b->vendor==V_OPENBGPD) {
+		return bgpq3_print_openbgpd_oaspath(f,b);
+	} else if(b->vendor==V_NOKIA) {
+		return bgpq3_print_nokia_oaspath(f,b);
+	} else if(b->vendor==V_NOKIA_MD) {
+		return bgpq3_print_nokia_md_oaspath(f,b);
+	} else if(b->vendor==V_HUAWEI) {
+		return bgpq3_print_huawei_oaspath(f,b);
 	} else {
 		sx_report(SX_FATAL,"Unknown vendor %i\n", b->vendor);
 	};
 	return 0;
+};
+
+int
+bgpq3_print_asset(FILE* f, struct bgpq_expander* b)
+{
+	switch(b->vendor) {
+	case V_JSON:
+		return bgpq3_print_json_aspath(f,b);
+	case V_OPENBGPD:
+		return bgpq3_print_openbgpd_asset(f,b);
+	case V_BIRD:
+		return bgpq3_print_bird_aspath(f,b);
+	default:
+		sx_report(SX_FATAL, "as-sets (-t) supported for JSON, OpenBGPD "
+			"and BIRD only\n");
+		return -1;
+	};
 };
 
 void
@@ -472,6 +790,82 @@ bgpq3_print_bird_aspath(FILE* f, struct bgpq_expander* b)
 };
 
 void
+bgpq3_print_openbgpd_prefix(struct sx_radix_node* n, void* ff)
+{
+	char prefix[128];
+	FILE* f=(FILE*)ff;
+	if(n->isGlue)
+		goto checkSon;
+	if(!f)
+		f=stdout;
+	sx_prefix_snprintf(&n->prefix, prefix, sizeof(prefix));
+	if (!n->isAggregate) {
+		fprintf(f, "\n\t%s", prefix);
+	} else if (n->aggregateLow == n->aggregateHi) {
+		fprintf(f, "\n\t%s prefixlen = %u", prefix, n->aggregateHi);
+	} else if (n->aggregateLow > n->prefix.masklen) {
+		fprintf(f, "\n\t%s prefixlen %u - %u",
+			prefix, n->aggregateLow, n->aggregateHi);
+	} else {
+		fprintf(f, "\n\t%s prefixlen %u - %u",
+			prefix, n->prefix.masklen, n->aggregateHi);
+	};
+checkSon:
+	if(n->son)
+		bgpq3_print_openbgpd_prefix(n->son, ff);
+};
+
+int
+bgpq3_print_openbgpd_asset(FILE* f, struct bgpq_expander* b)
+{
+	int i, j, k, nc=0;
+
+	fprintf(f, "as-set %s {", b->name?b->name:"NN");
+
+	for(k=0;k<65536;k++) {
+		if(!b->asn32s[k]) continue;
+
+		for(i=0;i<8192;i++) {
+			for(j=0;j<8;j++) {
+				if(b->asn32s[k][i]&(0x80>>j)) {
+					fprintf(f, "%s%u", nc==0 ? "\n\t" : " ", k*65536+i*8+j);
+					nc++;
+					if(nc==b->aswidth)
+						nc=0;
+				};
+			};
+		};
+	};
+	fprintf(f, "\n}\n");
+	return 0;
+};
+
+int
+bgpq3_print_openbgpd_aspath(FILE* f, struct bgpq_expander* b)
+{
+	int i, j, k, lineNo=0;
+
+	for(k=0;k<65536;k++) {
+		if(!b->asn32s[k]) continue;
+
+		for(i=0;i<8192;i++) {
+			for(j=0;j<8;j++) {
+				if(b->asn32s[k][i]&(0x80>>j)) {
+					fprintf(f, "allow from AS %u AS %u\n", b->asnumber,
+						k*65536+i*8+j);
+					lineNo++;
+				};
+			};
+		};
+	};
+	if(!lineNo)
+		fprintf(f, "deny from AS %u\n", b->asnumber);
+	return 0;
+};
+
+static int jrfilter_prefixed=1;
+
+void
 bgpq3_print_jrfilter(struct sx_radix_node* n, void* ff)
 {
 	char prefix[128];
@@ -480,13 +874,17 @@ bgpq3_print_jrfilter(struct sx_radix_node* n, void* ff)
 	if(!f) f=stdout;
 	sx_prefix_snprintf(&n->prefix,prefix,sizeof(prefix));
 	if(!n->isAggregate) {
-		fprintf(f,"    route-filter %s exact;\n", prefix);
+		fprintf(f,"    %s%s exact;\n",
+			jrfilter_prefixed ? "route-filter " : "", prefix);
 	} else {
 		if(n->aggregateLow>n->prefix.masklen) {
-			fprintf(f,"    route-filter %s prefix-length-range /%u-/%u;\n",
+			fprintf(f,"    %s%s prefix-length-range /%u-/%u;\n",
+				jrfilter_prefixed ? "route-filter " : "",
 				prefix,n->aggregateLow,n->aggregateHi);
 		} else {
-			fprintf(f,"    route-filter %s upto /%u;\n", prefix,n->aggregateHi);
+			fprintf(f,"    %s%s upto /%u;\n",
+				jrfilter_prefixed ? "route-filter " : "",
+				prefix,n->aggregateHi);
 		};
 	};
 checkSon:
@@ -554,6 +952,36 @@ checkSon:
 };
 
 void
+bgpq3_print_hprefix(struct sx_radix_node* n, void* ff)
+{
+	char prefix[128];
+	FILE* f=(FILE*)ff;
+	if(!f) f=stdout;
+	if(n->isGlue) goto checkSon;
+	sx_prefix_snprintf_sep(&n->prefix,prefix,sizeof(prefix)," ");
+	if(n->isAggregate) {
+		if(n->aggregateLow>n->prefix.masklen) {
+			fprintf(f,"ip %s-prefix %s permit %s greater-equal %u "
+				"less-equal %u\n",
+				n->prefix.family==AF_INET?"ip":"ipv6",bname?bname:"NN",
+				prefix,n->aggregateLow,n->aggregateHi);
+		} else {
+			fprintf(f,"ip %s-prefix %s permit %s less-equal %u\n",
+				n->prefix.family==AF_INET?"ip":"ipv6",bname?bname:"NN",
+				prefix,n->aggregateHi);
+		};
+	} else {
+		fprintf(f,"ip %s-prefix %s permit %s\n",
+			(n->prefix.family==AF_INET)?"ip":"ipv6",bname?bname:"NN",
+			prefix);
+	};
+checkSon:
+	if(n->son)
+		bgpq3_print_hprefix(n->son,ff);
+};
+
+
+void
 bgpq3_print_ceacl(struct sx_radix_node* n, void* ff)
 {
 	char prefix[128];
@@ -618,6 +1046,86 @@ checkSon:
 		bgpq3_print_ceacl(n->son,ff);
 };
 
+void
+bgpq3_print_nokia_ipfilter(struct sx_radix_node* n, void* ff)
+{
+	char prefix[128];
+	FILE* f=(FILE*)ff;
+	if(n->isGlue) goto checkSon;
+	if(!f) f=stdout;
+	sx_prefix_snprintf(&n->prefix,prefix,sizeof(prefix));
+	fprintf(f,"    prefix %s\n", prefix);
+checkSon:
+	if(n->son)
+		bgpq3_print_nokia_ipfilter(n->son, ff);
+};
+
+void
+bgpq3_print_nokia_md_ipfilter(struct sx_radix_node* n, void* ff)
+{
+	char prefix[128];
+	FILE* f=(FILE*)ff;
+	if(n->isGlue) goto checkSon;
+	if(!f) f=stdout;
+	sx_prefix_snprintf(&n->prefix,prefix,sizeof(prefix));
+	fprintf(f,"    prefix %s { }\n", prefix);
+checkSon:
+	if(n->son)
+		bgpq3_print_nokia_md_ipfilter(n->son, ff);
+};
+
+void
+bgpq3_print_nokia_prefix(struct sx_radix_node* n, void* ff)
+{
+	char prefix[128];
+	FILE* f=(FILE*)ff;
+	if(n->isGlue) goto checkSon;
+	if(!f) f=stdout;
+	sx_prefix_snprintf(&n->prefix,prefix,sizeof(prefix));
+	if(!n->isAggregate) {
+		fprintf(f,"    prefix %s exact\n", prefix);
+	} else {
+		if(n->aggregateLow>n->prefix.masklen) {
+			fprintf(f,"    prefix %s prefix-length-range %u-%u\n",
+				prefix,n->aggregateLow,n->aggregateHi);
+		} else {
+			fprintf(f,"    prefix %s prefix-length-range %u-%u\n",
+				prefix, n->prefix.masklen, n->aggregateHi);
+		};
+	};
+checkSon:
+	if(n->son)
+		bgpq3_print_nokia_prefix(n->son, ff);
+
+};
+
+void
+bgpq3_print_nokia_md_prefix(struct sx_radix_node* n, void* ff)
+{
+	char prefix[128];
+	FILE* f=(FILE*)ff;
+	if(n->isGlue) goto checkSon;
+	if(!f) f=stdout;
+	sx_prefix_snprintf(&n->prefix,prefix,sizeof(prefix));
+	if(!n->isAggregate) {
+		fprintf(f,"    prefix %s type exact {\n    }\n", prefix);
+	} else {
+		if(n->aggregateLow>n->prefix.masklen) {
+			fprintf(f,"    prefix %s type range {\n        start-length %u\n"
+				"        end-length %u\n    }\n",
+				prefix,n->aggregateLow,n->aggregateHi);
+		} else {
+			fprintf(f,"    prefix %s type through {\n        "
+				"through-length %u\n    }\n",
+				prefix, n->aggregateHi);
+		};
+	};
+checkSon:
+	if(n->son)
+		bgpq3_print_nokia_md_prefix(n->son, ff);
+
+};
+
 int
 bgpq3_print_juniper_prefixlist(FILE* f, struct bgpq_expander* b)
 {
@@ -645,6 +1153,7 @@ bgpq3_print_juniper_routefilter(FILE* f, struct bgpq_expander* b)
 			fprintf(f,"    %s;\n",b->match);
 	};
 	if(!sx_radix_tree_empty(b->tree)) {
+		jrfilter_prefixed=1;
 		sx_radix_tree_foreach(b->tree,bgpq3_print_jrfilter,f);
 	} else {
 		fprintf(f,"    route-filter %s/0 orlonger reject;\n",
@@ -655,6 +1164,49 @@ bgpq3_print_juniper_routefilter(FILE* f, struct bgpq_expander* b)
 	} else {
 		fprintf(f, "  }\n }\n}\n");
 	};
+	return 0;
+};
+
+int
+bgpq3_print_openbgpd_prefixlist(FILE* f, struct bgpq_expander* b)
+{
+	bname=b->name ? b->name : "NN";
+	if (sx_radix_tree_empty(b->tree)) {
+		fprintf(f, "# generated prefix-list %s (AS %u) is empty\n", bname,
+			b->asnumber);
+		if (!b->asnumber)
+			fprintf(f, "# use -a <asn> to generate \"deny from ASN <asn>\" "
+				"instead of this list\n");
+	};
+	if (!sx_radix_tree_empty(b->tree) || !b->asnumber) {
+		if(b->name){
+			if(strcmp(b->name, "NN") != 0) {
+				fprintf(f, "%s=\"", b->name);
+			}
+		}
+		fprintf(f,"prefix { ");
+		sx_radix_tree_foreach(b->tree,bgpq3_print_openbgpd_prefix,f);
+		fprintf(f, "\n\t}");
+		if(b->name){
+			if(strcmp(b->name, "NN") != 0) {
+				fprintf(f, "\"");
+			}
+		}
+		fprintf(f, "\n");
+	} else {
+		fprintf(f, "deny from AS %u\n", b->asnumber);
+	};
+	return 0;
+};
+
+int
+bgpq3_print_openbgpd_prefixset(FILE* f, struct bgpq_expander* b)
+{
+	bname=b->name ? b->name : "NN";
+	fprintf(f,"prefix-set %s {", b->name);
+	if (!sx_radix_tree_empty(b->tree))
+		sx_radix_tree_foreach(b->tree,bgpq3_print_openbgpd_prefix,f);
+	fprintf(f, "\n}\n");
 	return 0;
 };
 
@@ -710,6 +1262,24 @@ bgpq3_print_bird_prefixlist(FILE* f, struct bgpq_expander* b)
 	return 0;
 };
 
+int
+bgpq3_print_huawei_prefixlist(FILE* f, struct bgpq_expander* b)
+{
+	bname=b->name ? b->name : "NN";
+	seq=b->sequence;
+	fprintf(f,"undo ip %s-prefix %s\n",
+		(b->family==AF_INET)?"ip":"ipv6",bname);
+	if (!sx_radix_tree_empty(b->tree)) {
+		sx_radix_tree_foreach(b->tree,bgpq3_print_hprefix,f);
+	} else {
+		fprintf(f, "ip %s-prefix %s deny %s\n",
+			(b->family==AF_INET) ? "ip" : "ipv6", bname,
+			(b->family==AF_INET) ? "0.0.0.0/0" : "::/0");
+	};
+	return 0;
+};
+
+
 struct fpcbdata {
 	FILE* f;
 	struct bgpq_expander* b;
@@ -744,6 +1314,18 @@ bgpq3_print_format_prefixlist(FILE* f, struct bgpq_expander* b)
 };
 
 int
+bgpq3_print_nokia_prefixlist(FILE* f, struct bgpq_expander* b)
+{
+	bname=b->name ? b->name : "NN";
+	fprintf(f,"configure router policy-options\nbegin\nno prefix-list \"%s\"\n",
+		bname);
+	fprintf(f,"prefix-list \"%s\"\n", bname);
+	sx_radix_tree_foreach(b->tree,bgpq3_print_nokia_prefix,f);
+	fprintf(f,"exit\ncommit\n");
+	return 0;
+};
+
+int
 bgpq3_print_cisco_eacl(FILE* f, struct bgpq_expander* b)
 {
 	bname=b->name ? b->name : "NN";
@@ -759,6 +1341,53 @@ bgpq3_print_cisco_eacl(FILE* f, struct bgpq_expander* b)
 };
 
 int
+bgpq3_print_nokia_ipprefixlist(FILE* f, struct bgpq_expander* b)
+{
+	bname=b->name ? b->name : "NN";
+	fprintf(f,"configure filter match-list\nno %s-prefix-list \"%s\"\n",
+		 b->tree->family==AF_INET?"ip":"ipv6", bname);
+	fprintf(f,"%s-prefix-list \"%s\" create\n", b->tree->family==AF_INET?"ip":"ipv6", bname);
+	if (!sx_radix_tree_empty(b->tree)) {
+		sx_radix_tree_foreach(b->tree,bgpq3_print_nokia_ipfilter,f);
+	} else {
+		fprintf(f,"# generated ip-prefix-list %s is empty\n", bname);
+	};
+	fprintf(f,"exit\n");
+	return 0;
+};
+
+int
+bgpq3_print_nokia_md_prefixlist(FILE* f, struct bgpq_expander* b)
+{
+	bname=b->name ? b->name : "NN";
+	fprintf(f,"/configure filter match-list\ndelete %s-prefix-list \"%s\"\n",
+		 b->tree->family==AF_INET?"ip":"ipv6", bname);
+	fprintf(f,"%s-prefix-list \"%s\" {\n", b->tree->family==AF_INET?"ip":"ipv6",
+		bname);
+	if (!sx_radix_tree_empty(b->tree)) {
+		sx_radix_tree_foreach(b->tree,bgpq3_print_nokia_md_ipfilter,f);
+	} else {
+		fprintf(f,"# generated %s-prefix-list %s is empty\n",
+			b->tree->family==AF_INET?"ip":"ipv6", bname);
+	};
+	fprintf(f,"}\n");
+	return 0;
+};
+
+int
+bgpq3_print_nokia_md_ipprefixlist(FILE* f, struct bgpq_expander* b)
+{
+	bname=b->name ? b->name : "NN";
+	fprintf(f,"/configure policy-options\ndelete prefix-list \"%s\"\n", bname);
+	fprintf(f,"prefix-list \"%s\" {\n", bname);
+	if (!sx_radix_tree_empty(b->tree)) {
+		sx_radix_tree_foreach(b->tree,bgpq3_print_nokia_md_prefix,f);
+	};
+	fprintf(f,"}\n");
+	return 0;
+};
+
+int
 bgpq3_print_prefixlist(FILE* f, struct bgpq_expander* b)
 {
 	switch(b->vendor) {
@@ -767,7 +1396,11 @@ bgpq3_print_prefixlist(FILE* f, struct bgpq_expander* b)
 		case V_CISCO_XR: return bgpq3_print_ciscoxr_prefixlist(f,b);
 		case V_JSON: return bgpq3_print_json_prefixlist(f,b);
 		case V_BIRD: return bgpq3_print_bird_prefixlist(f,b);
+		case V_OPENBGPD: return bgpq3_print_openbgpd_prefixlist(f,b);
 		case V_FORMAT: return bgpq3_print_format_prefixlist(f,b);
+		case V_NOKIA: return bgpq3_print_nokia_prefixlist(f,b);
+		case V_NOKIA_MD: return bgpq3_print_nokia_md_ipprefixlist(f,b);
+		case V_HUAWEI: return bgpq3_print_huawei_prefixlist(f,b);
 	};
 	return 0;
 };
@@ -781,7 +1414,37 @@ bgpq3_print_eacl(FILE* f, struct bgpq_expander* b)
 		case V_CISCO_XR: sx_report(SX_FATAL, "unreachable point\n");
 		case V_JSON: sx_report(SX_FATAL, "unreachable point\n");
 		case V_BIRD: sx_report(SX_FATAL, "unreachable point\n");
+		case V_OPENBGPD: return bgpq3_print_openbgpd_prefixset(f,b);
 		case V_FORMAT: sx_report(SX_FATAL, "unreachable point\n");
+		case V_NOKIA: return bgpq3_print_nokia_ipprefixlist(f,b);
+		case V_NOKIA_MD: return bgpq3_print_nokia_md_prefixlist(f,b);
+		case V_HUAWEI: return sx_report(SX_FATAL, "unreachable point\n");
+	};
+	return 0;
+};
+
+int
+bgpq3_print_juniper_route_filter_list(FILE* f, struct bgpq_expander* b)
+{
+	fprintf(f, "policy-options {\nreplace:\n  route-filter-list %s {\n",
+		b->name?b->name:"NN");
+	if (sx_radix_tree_empty(b->tree)) {
+		fprintf(f, "    route-filter %s/0 orlonger reject;\n",
+			b->tree->family == AF_INET ? "0.0.0.0" : "::");
+	} else {
+		jrfilter_prefixed=0;
+		sx_radix_tree_foreach(b->tree,bgpq3_print_jrfilter,f);
+	};
+	fprintf(f, "  }\n}\n");
+	return 0;
+};
+
+int
+bgpq3_print_route_filter_list(FILE* f, struct bgpq_expander* b)
+{
+	switch(b->vendor) {
+		case V_JUNIPER: return bgpq3_print_juniper_route_filter_list(f,b);
+		default: sx_report(SX_FATAL, "unreachable point\n");
 	};
 	return 0;
 };

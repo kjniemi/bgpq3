@@ -4,12 +4,17 @@
 
 #include <sys/types.h>
 #include <sys/socket.h>
+#if HAVE_SYS_SELECT_H
+#include <sys/select.h>
+#endif
 
 #include <assert.h>
 #include <fcntl.h>
+#include <inttypes.h>
 #include <ctype.h>
 #include <errno.h>
 #include <netdb.h>
+#include <limits.h>
 #include <string.h>
 #include <strings.h>
 #include <stdarg.h>
@@ -46,7 +51,7 @@ bgpq_expander_init(struct bgpq_expander* b, int af)
 	if(!b->tree) goto fixups;
 
 	b->family=af;
-	b->sources="ripe,radb,apnic";
+	b->sources="";
 	b->name="NN";
 	b->aswidth=8;
 	b->asn32s[0]=malloc(8192);
@@ -302,7 +307,11 @@ int
 bgpq_expanded_v6prefix(char* prefix, struct bgpq_expander* ex,
 	struct bgpq_request* req)
 {
-	bgpq_expander_add_prefix(ex,prefix);
+	char* d = strchr(prefix, '^');
+	if (!d)
+		bgpq_expander_add_prefix(ex,prefix);
+	else
+		bgpq_expander_add_prefix_range(ex,prefix);
 	return 1;
 };
 
@@ -371,6 +380,29 @@ bgpq_pipeline(struct bgpq_expander* b,
 		STAILQ_INSERT_TAIL(&b->wq, bp, next);
 
 	return bp;
+};
+
+static void
+bgpq_expander_invalidate_asn(struct bgpq_expander* b, const char* q)
+{
+	if (!strncmp(q, "!gas", 4) || !strncmp(q, "!6as", 4)) {
+		char* eptr;
+		unsigned long asn = strtoul(q+4, &eptr, 10), asn0, asn1 = 0;
+		if (!asn || asn == ULONG_MAX || asn >= 4294967295 ||
+			(eptr && *eptr != '\n')) {
+			sx_report(SX_ERROR, "some problem invalidating asn %s\n", q);
+			return;
+		};
+		asn1 = asn % 65536;
+		asn0 = asn / 65536;
+		if (!b->asn32s[asn0] ||
+			!(b->asn32s[asn0][asn1/8] & (0x80 >> (asn1 % 8)))) {
+			sx_report(SX_NOTICE, "strange, invalidating inactive asn %lu(%s)\n",
+				asn, q);
+		} else {
+			b->asn32s[asn0][asn1/8] &= ~(0x80 >> (asn1 % 8));
+		};
+	};
 };
 
 static void
@@ -465,6 +497,10 @@ have:
 			unsigned long togot=strtoul(response+1,&eon,10);
 			char* recvbuffer=malloc(togot+2);
 			int offset = 0;
+			if (!recvbuffer) {
+				sx_report(SX_FATAL, "error allocating %lu bytes: %s\n",
+					togot+2, strerror(errno));
+			};
 			memset(recvbuffer,0,togot+2);
 
 			if(!eon || *eon!='\n') {
@@ -550,10 +586,12 @@ have3:
 		} else if(response[0]=='C') {
 			/* No data */
 			SX_DEBUG(debug_expander,"No data expanding %s\n", req->request);
+			if (b->validate_asns) bgpq_expander_invalidate_asn(b, req->request);
 		} else if(response[0]=='D') {
 			/* .... */
 			SX_DEBUG(debug_expander,"Key not found expanding %s\n",
 				req->request);
+			if (b->validate_asns) bgpq_expander_invalidate_asn(b, req->request);
 		} else if(response[0]=='E') {
 			sx_report(SX_ERROR, "Multiple keys expanding %s: %s\n",
 				req->request, response);
@@ -623,8 +661,12 @@ repeat:
 	if(response[0]=='A') {
 		char* eon, *c;
 		long togot=strtoul(response+1,&eon,10);
-		char recvbuffer[togot+2];
+		char *recvbuffer = malloc(togot+2);
 		int  offset = 0;
+		if (!recvbuffer) {
+			sx_report(SX_FATAL, "Error allocating %lu bytes: %s\n",
+				togot+2, strerror(errno));
+		};
 
 		if(eon && *eon!='\n') {
 			sx_report(SX_ERROR,"A-code finised with wrong char '%c' (%s)\n",
@@ -689,10 +731,13 @@ have3:
 			c+=spn+1;
 		};
 		memset(recvbuffer, 0, togot+2);
+		free(recvbuffer);
 	} else if(response[0]=='C') {
 		/* no data */
+		if (b->validate_asns) bgpq_expander_invalidate_asn(b, request);
 	} else if(response[0]=='D') {
 		/* ... */
+		if (b->validate_asns) bgpq_expander_invalidate_asn(b, request);
 	} else if(response[0]=='E') {
 		/* XXXXXX */
 	} else if(response[0]=='F') {
@@ -725,7 +770,7 @@ bgpq_expand(struct bgpq_expander* b)
 	for(rp=res; rp; rp=rp->ai_next) {
 		fd=socket(rp->ai_family,rp->ai_socktype,0);
 		if(fd==-1) {
-			if(errno==EPROTONOSUPPORT) continue;
+			if(errno==EPROTONOSUPPORT || errno==EAFNOSUPPORT) continue;
 			sx_report(SX_ERROR,"Unable to create socket: %s\n",
 				strerror(errno));
 			exit(1);
@@ -766,12 +811,15 @@ bgpq_expand(struct bgpq_expander* b)
 	};
 
 	if(b->sources && b->sources[0]!=0) {
-		char sources[128];
+		int slen = strlen(b->sources)+4;
+		if (slen < 128)
+			slen = 128;
+		char sources[slen];
 		snprintf(sources,sizeof(sources),"!s%s\n", b->sources);
 		SX_DEBUG(debug_expander,"Requesting sources %s", sources);
 		write(fd, sources, strlen(sources));
-		memset(sources, 0, sizeof(sources));
-		read(fd, sources, sizeof(sources));
+		memset(sources, 0, slen);
+		read(fd, sources, slen);
 		SX_DEBUG(debug_expander,"Got answer %s", sources);
 		if(sources[0]!='C') {
 			sx_report(SX_ERROR, "Invalid source(s) '%s': %s\n", b->sources,
@@ -812,8 +860,8 @@ bgpq_expand(struct bgpq_expander* b)
 			bgpq_read(b);
 	};
 
-	if(b->generation>=T_PREFIXLIST) {
-		unsigned i, j, k;
+	if(b->generation>=T_PREFIXLIST || b->validate_asns) {
+		uint32_t i, j, k;
 		STAILQ_FOREACH(mc, &b->rsets, next) {
 			if(b->family==AF_INET) {
 				bgpq_expand_irrd(b, bgpq_expanded_prefix, NULL, "!i%s,1\n",
@@ -830,35 +878,19 @@ bgpq_expand(struct bgpq_expander* b)
 					if(b->asn32s[k][i]&(0x80>>j)) {
 						if(b->family==AF_INET6) {
 							if(!pipelining) {
-								if(k>0)
-									bgpq_expand_irrd(b, bgpq_expanded_v6prefix,
-										NULL, "!6as%u.%u\r\n", k, i*8+j);
-								else
-									bgpq_expand_irrd(b, bgpq_expanded_v6prefix,
-										NULL,"!6as%u\r\n", i*8+j);
+								bgpq_expand_irrd(b, bgpq_expanded_v6prefix,
+									NULL, "!6as%" PRIu32 "\n", (k<<16)+i*8+j);
 							} else {
-								if(k>0)
-									bgpq_pipeline(b, bgpq_expanded_v6prefix,
-										NULL, "!6as%u.%u\r\n", k, i*8+j);
-								else
-									bgpq_pipeline(b,bgpq_expanded_v6prefix,
-										NULL, "!6as%u\r\n", i*8+j);
+								bgpq_pipeline(b, bgpq_expanded_v6prefix,
+									NULL, "!6as%" PRIu32 "\n", (k<<16)+i*8+j);
 							};
 						} else {
 							if(!pipelining) {
-								if(k>0)
-									bgpq_expand_irrd(b, bgpq_expanded_prefix,
-										NULL,"!gas%u.%u\n", k, i*8+j);
-								else
-									bgpq_expand_irrd(b, bgpq_expanded_prefix,
-										NULL,"!gas%u\n", i*8+j);
+								bgpq_expand_irrd(b, bgpq_expanded_prefix,
+									NULL, "!gas%" PRIu32 "\n", (k<<16)+i*8+j);
 							} else {
-								if(k>0)
-									bgpq_pipeline(b, bgpq_expanded_prefix,
-										NULL, "!gas%u.%u\n", k, i*8+j);
-								else
-									bgpq_pipeline(b, bgpq_expanded_prefix,
-										NULL, "!gas%u\n", i*8+j);
+								bgpq_pipeline(b, bgpq_expanded_prefix,
+									NULL, "!gas%" PRIu32 "\n", (k<<16)+i*8+j);
 							};
 						};
 					};
