@@ -43,7 +43,8 @@ usage(int ecode)
 		"             [ip|ipv6]-prefix-list (Nokia) or prefix-set (OpenBGPD)"
 		"\n");
 	printf(" -F fmt    : generate output in user-defined format\n");
-	printf(" -f number : generate input as-path access-list\n");
+	printf(" -f number : generate input as-path access-list (use 0 to not "
+		"enforce first AS)\n");
 	printf(" -G number : generate output as-path access-list\n");
 	printf(" -h host   : host running IRRD software (whois.radb.net by "
 		"default)\n"
@@ -77,7 +78,7 @@ usage(int ecode)
 		"registered routes\n");
 	printf(" -X        : generate config for IOS XR (Cisco IOS by default)\n");
 	printf("\n" PACKAGE_NAME " version: " PACKAGE_VERSION "\n");
-	printf("Copyright(c) Alexandre Snarskii <snar@snar.spb.ru> 2007-2018\n\n");
+	printf("Copyright(c) Alexandre Snarskii <snar@snar.spb.ru> 2007-2021\n\n");
 	exit(ecode);
 };
 
@@ -99,11 +100,12 @@ vendor_exclusive()
 };
 
 int
-parseasnumber(struct bgpq_expander* expander, char* optarg)
+parseasnumber(struct bgpq_expander* expander, char* optarg, int zero)
 {
 	char* eon=NULL;
 	expander->asnumber=strtoul(optarg,&eon,10);
-	if(expander->asnumber<1 || expander->asnumber>(65535ul*65535)) {
+	if((!zero && expander->asnumber<1) ||
+		expander->asnumber>(65535ul*65535)) {
 		sx_report(SX_FATAL,"Invalid AS number: %s\n", optarg);
 		exit(1);
 	};
@@ -173,7 +175,7 @@ main(int argc, char* argv[])
 			expander.tree->family=AF_INET6;
 			break;
 		case 'a':
-			parseasnumber(&expander,optarg);
+			parseasnumber(&expander,optarg,0);
 			break;
 		case 'A':
 			if(aggregate) debug_aggregation++;
@@ -202,12 +204,12 @@ main(int argc, char* argv[])
 		case 'f':
 			if(expander.generation) exclusive();
 			expander.generation=T_ASPATH;
-			parseasnumber(&expander,optarg);
+			parseasnumber(&expander,optarg,1);
 			break;
 		case 'G':
 			if(expander.generation) exclusive();
 			expander.generation=T_OASPATH;
-			parseasnumber(&expander,optarg);
+			parseasnumber(&expander,optarg,0);
 			break;
 		case 'h': {
 			char* d=strchr(optarg, ':');
@@ -433,16 +435,24 @@ main(int argc, char* argv[])
 		exit(1);
 	};
 
-	if(aggregate && expander.vendor==V_NOKIA) {
-		sx_report(SX_FATAL, "Sorry, aggregation (-A) is not supported on "
-			"Nokia classic CLI (-N)\n");
-		exit(1);
-	};
-
-	if(aggregate && expander.vendor==V_NOKIA_MD &&
+	if(aggregate && (expander.vendor==V_NOKIA_MD || expander.vendor==V_NOKIA) &&
 		expander.generation!=T_PREFIXLIST) {
 		sx_report(SX_FATAL, "Sorry, aggregation (-A) is not supported with "
-			"match-lists (-E) on Nokia MD-CLI. You can try prefix-lists (-P) "
+			"ip-prefix-lists (-E) on Nokia. You can try prefix-lists (-P) "
+			"instead\n");
+		exit(1);
+	};
+	if(refine && (expander.vendor==V_NOKIA_MD || expander.vendor==V_NOKIA) &&
+		expander.generation!=T_PREFIXLIST) {
+		sx_report(SX_FATAL, "Sorry, more-specifics (-R) is not supported with "
+			"ip-prefix-lists (-E) on Nokia. You can try prefix-lists (-P) "
+			"instead\n");
+		exit(1);
+	};
+	if(refineLow && (expander.vendor==V_NOKIA_MD || expander.vendor==V_NOKIA) &&
+		expander.generation!=T_PREFIXLIST) {
+		sx_report(SX_FATAL, "Sorry, more-specifics (-r) is not supported with "
+			"ip-prefix-lists (-E) on Nokia. You can try prefix-lists (-P) "
 			"instead\n");
 		exit(1);
 	};
@@ -506,16 +516,6 @@ main(int argc, char* argv[])
 			};
 		};
 
-		if(expander.vendor==V_NOKIA) {
-			if(refine) {
-				sx_report(SX_FATAL, "Sorry, more-specific filters (-R %u) "
-					"not supported on Nokia classic CLI (-N)\n", refine);
-			} else {
-				sx_report(SX_FATAL, "Sorry, more-specific filters (-r %u) "
-					"not supported on Nokia classic CLI (-N)\n", refineLow);
-			};
-		};
-
 		if(expander.generation<T_PREFIXLIST) {
 			if(refine) {
 				sx_report(SX_FATAL, "Sorry, more-specific filter (-R %u) "
@@ -567,6 +567,14 @@ main(int argc, char* argv[])
 		expander.generation != T_OASPATH) {
 		sx_report(SX_FATAL, "Sorry, -w makes sense only for as-path (-f/-G) "
 			"generation\n");
+	};
+	if(expander.generation==T_ASPATH && expander.asnumber==0 &&
+		(expander.vendor==V_OPENBGPD)) {
+		sx_report(SX_FATAL, "Sorry, -f 0 makes no sense with OpenBGPD\n");
+	};
+	if(expander.generation==T_ASPATH && expander.asnumber==0 &&
+		(expander.vendor==V_NOKIA || expander.vendor==V_NOKIA_MD)) {
+		sx_report(SX_FATAL, "Sorry, -f 0 is not yet implemented for Nokia\n");
 	};
 
 	if(!argv[0])

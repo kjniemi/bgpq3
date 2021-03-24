@@ -1,3 +1,21 @@
+0.1.36-pre (2021-02-21):
+    - initial support for as-transparent route-servers in import as-path
+    generation: now you can use -f 0 to not enforce first asn in path.
+    No actual changes for Bird and JSON, not yet supported for Nokia
+    (including MD) and OpenBGPD. Use case reported by Mikhail Grishin.
+    - correct sequencing in empty prefix-lists. Reported by Brooks Swinnerton.
+    - fix empty route-filter-lists generation. Reported by Antti Ristimäki.
+    - minor documentation cleanup: bgpq3 supports much more vendors
+    than just Cisco and Juniper. Copyright years updated.
+    - Nokia SR OS "classic" actually supports aggregation and
+    and more-specific filtering in prefix-lists. Thanks to mfisher128
+    for reporting.
+    - change log level for prefixes with wrong address family from error
+    to debugging: it's perfectly correct to have prefixes of different
+    families in route-sets. Thanks to Jay Ford for suggestion.
+    - increase select timeout to 30 sec.
+    - correct spacing for IOS-XR. Reported by Mathias Wolkert.
+
 0.1.35 (2018-11-30):
     - initial support for Juniper route-filter-lists (JunOS 16.2+).
     - too large (>124bytes) sources list was not handled correctly.

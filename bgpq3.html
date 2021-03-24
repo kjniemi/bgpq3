@@ -13,21 +13,25 @@ ul      { list-style: none; }
 
 <h2>NAME</h2>
 
-<p><code>bgpq3</code> - bgp filtering automation for Cisco and Juniper routers</p>
+<p><code>bgpq3</code> - bgp filtering automation tool</p>
 
 <h2>SYNOPSIS</h2>
 
 <p><code>
-    bgpq3 [-h host] [-S sources] [-EP] [-f asn | -G asn] [-2346AbDdJjpX] [-r len] [-R len] [-m max] [-W len] OBJECTS [...]
+    bgpq3 [-h host[:port]] [-S sources] [-EPz] [-f asn | -F fmt | -G asn | -t] [-2346ABbDdJjNnpsUX] [-a asn] [-r len] [-R len] [-m max] [-W len] OBJECTS [...] EXCEPT OBJECTS
 </code></p>
 
 <h2>DESCRIPTION</h2>
 
-<p>The bgpq3 utility used to generate Cisco and Juniper prefix-lists,
-extended access-lists, policy-statement terms and as-path lists based on
-RADB data.</p>
+<p>The bgpq3 utility used to generate configuration (prefix-lists,
+extended access-lists, policy-statement terms and as-path lists)
+based on RADB data.</p>
 
 <p>The options are as follows:</p>
+
+<h4>-2</h4>
+
+<p>Allow routes registered for as23456 (transition-as) (default: false)</p>
 
 <h4>-3</h4>
 
@@ -46,6 +50,14 @@ RADB data.</p>
 <p>Try to aggregate generated filters as much as possible (not all output formats
 supported).</p>
 
+<h4>-a asn</h4>
+
+<p>Specify ASN that shall be denied in case of empty prefix-list (OpenBGPD).</p>
+
+<h4>-B</h4>
+
+<p>Generate output in OpenBGPD format (default: Cisco).</p>
+
 <h4>-b</h4>
 
 <p>Generate output in BIRD format (default: Cisco).</p>
@@ -61,17 +73,22 @@ supported).</p>
 <h4>-E</h4>
 
 <p>Generate extended access-list (Cisco) or policy-statement term using
-route-filters (Juniper).</p>
+route-filters (Juniper), [ip|ipv6]-prefix-list (Nokia) or prefix-filter
+(OpenBGPD)</p>
 
 <h4>-f <code>AS number</code></h4>
 
 <p>Generate input as-path access-list for adjacent as <code>AS number</code>.</p>
 
+<h4>-F <code>fmt</code></h4>
+
+<p>Generate output in user-defined format.</p>
+
 <h4>-G <code>number</code></h4>
 
 <p>Generate output as-path access-list.</p>
 
-<h4>-h <code>host</code></h4>
+<h4>-h <code>host[:port]</code></h4>
 
 <p>Host running IRRD database (default: <code>whois.radb.net</code>).</p>
 
@@ -91,9 +108,22 @@ route-filters (Juniper).</p>
 
 <p>Extra match conditions for Juniper route-filters. See the examples section.</p>
 
+<h4>-n</h4>
+
+<p>Generate config for Nokia SR OS (former Alcatel-Lucent) MD-CLI (default: Cisco)</p>
+
+<h4>-N</h4>
+
+<p>Generate config for Nokia SR OS (former Alcatel-Lucent) classic CLI (default: Cisco)</p>
+
 <h4>-l <code>name</code></h4>
 
 <p><code>Name</code> of generated configuration stanza.</p>
+
+<h4>-L <code>limit</code></h4>
+
+<p>Limit recursion depth when expanding. This slows <code>bgpq3</code> a bit, but sometimes
+is a useful feature to prevent generated filters from growing too big.</p>
 
 <h4>-p</h4>
 
@@ -114,13 +144,25 @@ only).</p>
 <p>Allow more-specific routes up to specified masklen too.  (Please, note: objects
 with prefix-length greater than specified length will be always allowed.)</p>
 
+<h4>-s</h4>
+
+<p>Generate sequence numbers in IOS-style prefix-lists.</p>
+
 <h4>-S <code>sources</code></h4>
 
-<p>Use specified sources only (default: RADB,RIPE,APNIC).</p>
+<p>Use specified database sources only (example: RIPE,APNIC,RADB).</p>
+
+<h4>-t</h4>
+
+<p>Generate as-sets for OpenBGPD (OpenBSD 6.4+), BIRD and JSON formats.</p>
 
 <h4>-T</h4>
 
 <p>Disable pipelining. (not recommended)</p>
+
+<h4>-U</h4>
+
+<p>Generate output in Huawei format (default: Cisco).</p>
 
 <h4>-W <code>length</code></h4>
 
@@ -130,10 +172,19 @@ with prefix-length greater than specified length will be always allowed.)</p>
 
 <p>Generate config for Cisco IOS XR devices (plain IOS by default).</p>
 
+<h4>-z</h4>
+
+<p>Generate Juniper route-filter-list (JunOS 16.2+).</p>
+
 <h4><code>OBJECTS</code></h4>
 
 <p><code>OBJECTS</code> means networks (in prefix format), autonomous systems, as-sets and
 route-sets. If multiple objects are specified they will be merged.</p>
+
+<h4><code>EXCEPT OBJECTS</code></h4>
+
+<p>You can exclude autonomous sets, as-sets and route-sets found during
+expansion from future expansion.</p>
 
 <h2>EXAMPLES</h2>
 
@@ -255,6 +306,77 @@ and the result will be next:</p>
 <p><code>AS196611</code> is no more in the list, however, <code>AS23456</code> (transition AS) would
 have been added to list if it were not present.</p>
 
+<h2>USER-DEFINED FORMAT</h2>
+
+<p>If you want to generate configuration not for routers, but for some
+other programs/systems, you may use user-defined formatting, like in
+example below:</p>
+
+<pre><code>user@host:~&gt;bgpq3 -F "ipfw add pass all from %n/%l to any\\n" as3254
+ipfw add pass all from 62.244.0.0/18 to any
+ipfw add pass all from 91.219.29.0/24 to any
+ipfw add pass all from 91.219.30.0/24 to any
+ipfw add pass all from 193.193.192.0/19 to any
+</code></pre>
+
+<p>Recognized format characters: '%n' - network, '%l' - mask length,
+'%N' - object name, '%m' - object mask and '%i' - inversed mask.
+Recognized escape characters: '\n' - new line, '\t' - tabulation.
+Please note that no new lines inserted automatically after each sentence,
+you have to add them into format string manually, elsewhere output will
+be in one line (sometimes it makes sense):</p>
+
+<pre><code>user@host:~&gt;bgpq3 -6F "%n/%l; " as-eltel
+2001:1b00::/32; 2620:4f:8000::/48; 2a04:bac0::/29; 2a05:3a80::/48;
+</code></pre>
+
+<h2>NOTES ON 'Database Sources' (-S) flag</h2>
+
+<p>By default <code>bgpq3</code> trusts to data from all databases mirrored into RADB.
+Unfortunately, not all these databases are equal in how much can we
+trust their data. RIR maintained databases (AFRINIC,ARIN,APNIC and RIPE)
+shall be trusted more than the others because they are indeed have the
+knowledge about which address space allocated to this or that ASn,
+other databases lack this knowledge and can (and, actually, do) contain
+some stale data: noone but RIRs care to remove outdated route-objects
+when address space revoked from one ASn and allocated to another.
+In order to keep their filters both compact and actual, <code>bgpq3</code> users
+are encouraged to use '-S' flag to limit database sources to only
+ones they trust.</p>
+
+<p>General recommendations:
+* use minimal set of RIR databases (only those in which you and your
+customers have registered route-objects). Keep RIR of your home region
+first in the list.
+* use non-RIR databases only when operating in LACNIC region (for some
+reason LACNIC does not export their data to RADB) or when you are unable
+to make your customers maintain their data in RIR databases.
+* avoid using RIPE-NONAUTH as trusted source: these records were created
+in RIPE database but for address space allocated to different RIR,
+so RIPE had no chance to check validity of this route.</p>
+
+<p>Note on source ordering: order matters. When expanding as-sets,
+<code>IRRd</code> sequentally checks all sources for matching object and stops
+on first found entry. So, in case when as-set registered in multiple
+databases (with different content), generated filters may differ
+depending on source order:</p>
+
+<pre><code>snar@host:~&gt;bgpq3 -S RIPE,RADB as-space
+no ip prefix-list NN
+ip prefix-list NN permit 195.190.32.0/19
+
+snar@host:~&gt;bgpq3 -S RADB,RIPE as-space
+no ip prefix-list NN
+ip prefix-list NN permit 45.4.4.0/22
+ip prefix-list NN permit 45.4.132.0/22
+ip prefix-list NN permit 45.6.128.0/22
+ip prefix-list NN permit 45.65.184.0/22
+[...]
+</code></pre>
+
+<p>Example: as we are operating mostly in Europe and APAC, we generate most
+of our filters with '-S RIPE,APNIC,RADB'.</p>
+
 <h2>DIAGNOSTICS</h2>
 
 <p>When everything is OK, <code>bgpq3</code> generates result to standard output and
@@ -288,7 +410,7 @@ each prefix-list <a href="http://www.juniper.net/techpubs/en_US/junos11.4/topics
 
 <ol>
 <li><a href="http://www.radb.net/">Routing Arbiter</a></li>
-<li><a href="http://www.ietf.org/internet-drafts/draft-michaelson-4byte-as-representation-05.txt">draft-michaelson-4byte-as-representation-05.txt</a>
+<li><a href="https://tools.ietf.org/html/draft-michaelson-4byte-as-representation-05">draft-michaelson-4byte-as-representation-05</a>
  for information on 'asdot' and 'asplain' notations.</li>
 <li><a href="http://www.cisco.com/en/US/prod/collateral/iosswrel/ps6537/ps6554/ps6599/data_sheet_C78-521821.html">Cisco documentation</a>
  for information on Cisco implementation of ASN32.</li>
